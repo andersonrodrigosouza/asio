@@ -21,6 +21,7 @@
   && !defined(ASIO_WINDOWS_RUNTIME) \
   && !defined(__CYGWIN__)
 
+#include "asio/associated_cancellation_slot.hpp"
 #include "asio/buffer.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/detail/bind_handler.hpp"
@@ -278,6 +279,19 @@ public:
       op::ptr::allocate(handler), 0 };
     p.p = new (p.v) op(success_ec_, impl.descriptor_, buffers, handler, io_ex);
 
+    // Optionally register for per-operation cancellation.
+    typename associated_cancellation_slot<Handler>::type slot
+      = asio::get_associated_cancellation_slot(handler);
+    if (slot.is_connected())
+    {
+      p.p->cancellation_key_ = &slot.template emplace<int>(
+          [this, descriptor = impl.descriptor_,
+            reactor_data = &impl.reactor_data_](int& key)
+          {
+            reactor_.cancel_ops_by_key(descriptor, *reactor_data, key, &key);
+          }, reactor::write_op);
+    }
+
     ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
           &impl, impl.descriptor_, "async_write_some"));
 
@@ -357,6 +371,19 @@ public:
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
     p.p = new (p.v) op(success_ec_, impl.descriptor_, buffers, handler, io_ex);
+
+    // Optionally register for per-operation cancellation.
+    typename associated_cancellation_slot<Handler>::type slot
+      = asio::get_associated_cancellation_slot(handler);
+    if (slot.is_connected())
+    {
+      p.p->cancellation_key_ = &slot.template emplace<int>(
+          [this, descriptor = impl.descriptor_,
+            reactor_data = &impl.reactor_data_](int& key)
+          {
+            reactor_.cancel_ops_by_key(descriptor, *reactor_data, key, &key);
+          }, reactor::read_op);
+    }
 
     ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
           &impl, impl.descriptor_, "async_read_some"));
