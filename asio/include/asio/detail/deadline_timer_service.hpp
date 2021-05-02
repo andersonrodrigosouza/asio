@@ -17,6 +17,7 @@
 
 #include "asio/detail/config.hpp"
 #include <cstddef>
+#include "asio/associated_cancellation_slot.hpp"
 #include "asio/error.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/detail/bind_handler.hpp"
@@ -250,6 +251,18 @@ public:
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
     p.p = new (p.v) op(handler, io_ex);
+
+    // Optionally register for per-operation cancellation.
+    typename associated_cancellation_slot<Handler>::type slot
+      = asio::get_associated_cancellation_slot(handler);
+    if (slot.is_connected())
+    {
+      p.p->cancellation_key_ = &slot.template emplace<int>(
+          [this, timer = &impl.timer_data](int& key)
+          {
+            scheduler_.cancel_timer_by_key(timer_queue_, timer, &key);
+          }, 0);
+    }
 
     impl.might_have_pending_waits = true;
 
